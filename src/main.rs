@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let connections: Db = Arc::new(Mutex::new(HashMap::new()));
 
     loop {
-        let (socket, addr) = listener.accept().await?;
+        let (mut socket, addr) = listener.accept().await?;
 
         let db = connections.clone();
 
@@ -99,13 +99,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
 
-                if !buf[..bytes_read].starts_with(b"/broadcast") {
-                    continue;
+                if buf[0..bytes_read].starts_with(b"/exit") {
+                    let mut map = db.lock().await;
+
+                    let sender_name = map.get(&addr).unwrap().0.clone();
+
+                    for (client_addr, (name, writer)) in map.iter_mut() {
+                        if *client_addr != addr {
+                            let format = format!("User {} has disconnected!", sender_name);
+                            let _ = writer.write_all(format.as_bytes()).await;
+                        }
+                    }
+
+                    map.remove(&addr);
+
+                    break;
                 }
-
-                let text = String::from_utf8_lossy(&buf[0..bytes_read]);
-
-                println!("Detected command : {}", text);
             }
         });
     }
